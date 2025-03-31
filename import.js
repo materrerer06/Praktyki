@@ -2,6 +2,10 @@ const mysql = require('mysql2');
 const fs = require('fs');
 const path = require('path');
 
+const removeBTags = (str) => {
+    return str.replace(/<b>/g, "").replace(/<\/b>/g, "");
+};
+
 const connection = mysql.createConnection({
     host: 'localhost',
     user: 'root',
@@ -45,9 +49,11 @@ fs.readdir(jsonDir, (err, files) => {
 
             if (jsonData.items && Array.isArray(jsonData.items)) {
                 jsonData.items.forEach(company => {
+                    const addressWithoutB = removeBTags(company.address_html);
+                    
                     const query = `
                         INSERT INTO woj_lodzkie (application_company_id, name, registration_number, nip, nip_eup, address_html)
-                        VALUES (?, ?, ?, ?, ?, ?)`;
+                        VALUES (?, ?, ?, ?, ?, ?)`; 
 
                     const values = [
                         company.application_company_id,
@@ -55,7 +61,7 @@ fs.readdir(jsonDir, (err, files) => {
                         company.registration_number,
                         company.nip,
                         company.nip_eup,
-                        company.address_html
+                        addressWithoutB 
                     ];
 
                     connection.query(query, values, (err, results) => {
