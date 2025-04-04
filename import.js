@@ -1,7 +1,15 @@
+const { OpenAI } = require("openai");
 const mysql = require('mysql2');
 const fs = require('fs').promises; // Używamy promises dla asynchronicznego odczytu plików
 const path = require('path');
 const readline = require('readline');
+
+// OpenAI API konfiguracja
+const OPENAI_API_KEY = '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';  // Wstaw swój klucz API OpenAI
+
+const openai = new OpenAI({
+    apiKey: OPENAI_API_KEY,
+  });
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -25,10 +33,9 @@ rl.question("Wybierz opcję: ", (answer) => {
 
 async function runScript1() {
     console.log("Uruchamiam import danych...");
-    // Filtrujemy foldery, których nazwa zaczyna się od "woj"
     const folders = await fs.readdir(__dirname);
     const wojFolders = await filterWojFolders(folders);
-    await executeDatabaseImport(wojFolders); // Przechodzi przez wszystkie foldery zaczynające się od "woj"
+    await executeDatabaseImport(wojFolders);
 }
 
 async function filterWojFolders(folders) {
@@ -52,6 +59,45 @@ function runScript2() {
     deleteDatabaseData();
 }
 
+// Funkcja do wyszukiwania telefonu i emaila z ChatGPT
+async function fetchContactFromChatGPT(nip) {
+    try {
+        const prompt = `Find the contact details (phone number and email) for the company with NIP: ${nip}. Provide the complete response with contact details as a JSON object.`;
+
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 10,
+            temperature: 0.7,
+        });
+
+        const contactData = response.choices[0].message.content.trim(); // Cała odpowiedź bota
+
+        return contactData; // Zwracamy całą odpowiedź bota
+    } catch (error) {
+        console.error('Błąd pobierania danych z ChatGPT:', error);
+        return null;
+    }
+}
+async function saveContactToDatabase(companyId, contactData, connection) {
+    return new Promise((resolve, reject) => {
+        const query = `
+            INSERT INTO company_contacts (company_id, odpowiedz_bota, zrodlo_danych, created_at)
+            VALUES (?, ?, ?, NOW())`;
+
+        connection.query(query, [companyId, contactData, 'ChatGPT'], (err, results) => {
+            if (err) {
+                console.error('Błąd przy wstawianiu odpowiedzi bota do bazy danych:', err);
+                return reject(err);
+            } else {
+                console.log('Dodano odpowiedź bota do bazy danych');
+                return resolve(results);
+            }
+        });
+    });
+}
+
+// Funkcja do importu danych do bazy danych MySQL
 async function executeDatabaseImport(folders) {
     const parseAddress = (str) => {
         if (!str) {
@@ -74,7 +120,6 @@ async function executeDatabaseImport(folders) {
         user: 'root',
         password: '',
         database: 'company_db',
-        connectTimeout: 30000  // Zwiększenie czasu oczekiwania do 30 sekund
     });
 
     connection.connect(err => {
@@ -85,15 +130,12 @@ async function executeDatabaseImport(folders) {
         console.log('Połączono z MySQL');
     });
 
-    // Przetwarzanie plików w partiach
     for (const folderName of folders) {
         const jsonDir = path.join(__dirname, folderName);
         try {
             const files = await fs.readdir(jsonDir);
             const jsonFiles = files.filter(file => file.endsWith('.json'));
-
             await processFilesInBatches(jsonFiles, jsonDir, connection, parseAddress);
-
         } catch (err) {
             console.error('Błąd odczytu katalogu:', err);
         }
@@ -105,7 +147,7 @@ async function executeDatabaseImport(folders) {
 }
 
 // Przetwarzanie plików w partiach
-const BATCH_SIZE = 5; // Maksymalna liczba plików do otwarcia na raz
+const BATCH_SIZE = 5;
 
 async function processFilesInBatches(files, jsonDir, connection, parseAddress) {
     let index = 0;
@@ -141,11 +183,38 @@ async function processFilesInBatches(files, jsonDir, connection, parseAddress) {
                             addressData.kod_pocztowy || null
                         ];
 
-                        connection.query(query, values, (err, results) => {
+                        connection.query(query, values, async (err, results) => {
                             if (err) {
                                 console.error(`Błąd przy wstawianiu danych dla ${company.name}:`, err);
                             } else {
-                                console.log(`Dane firmy ${company.name} zostały dodane do bazy.`);
+                                console.log(`Dodano firmę: ${company.name}`);
+                                
+                                if (company.nip) {
+                                    try {
+                                        const contact = await fetchContactFromChatGPT(company.nip);
+                                        const companyId = results.insertId;
+
+                                        if (contact) {
+                                            if (contact.phone) {
+                                                connection.query(
+                                                    'INSERT INTO company_contacts (company_id, telefon, zrodlo_danych, created_at) VALUES (?, ?, ?, NOW())',
+                                                    [companyId, contact.phone, 'ChatGPT']
+                                                );
+                                            }
+
+                                            if (contact.email) {
+                                                connection.query(
+                                                    'INSERT INTO company_contacts (company_id, email, zrodlo_danych, created_at) VALUES (?, ?, ?, NOW())',
+                                                    [companyId, contact.email, 'ChatGPT']
+                                                );
+                                            }
+
+                                            console.log(`Dodano kontakt z ChatGPT dla ${company.name}`);
+                                        }
+                                    } catch (e) {
+                                        console.error(`Błąd pobierania danych ChatGPT dla ${company.name}:`, e.message);
+                                    }
+                                }
                             }
                         });
                     }
