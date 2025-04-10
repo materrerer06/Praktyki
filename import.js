@@ -2,7 +2,7 @@ const mysql = require('mysql2');
 const fs = require('fs').promises;
 const path = require('path');
 const readline = require('readline');
-const { getCompanyDetails } = require('./gpt-client');
+const regonClient = require('./regonClient'); // Zakładając, że regonClient jest odpowiedzialny za komunikację z GUS API
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -136,21 +136,21 @@ async function insertCompanyData(company, connection) {
 
 async function insertContactData(company, connection) {
     try {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        const contacts = await getCompanyDetails(company.name);
+        // Uzyskaj dane kontaktowe z GUS na podstawie NIP firmy
+        const contacts = await getCompanyContactData(company.nip);
 
         if (contacts) {
             const contactQuery = `
                 INSERT INTO company_contacts 
                 (company_nip, phone, email)
-                VALUES (?, ?, ?)`;
+                VALUES (?, ?, ?)`; // Wstawia numer telefonu i email firmy
 
             await connection.promise().execute(contactQuery, [
                 company.nip,
                 contacts.phone || null,
                 contacts.email || null
             ]);
-            console.log(`Dane kontaktowe zapisane: ${company.name}`);
+            console.log(`Dane kontaktowe zapisane dla firmy: ${company.name}`);
         }
     } catch (error) {
         console.error(`Błąd pobierania kontaktów dla ${company.name}:`, error.message);
@@ -158,10 +158,30 @@ async function insertContactData(company, connection) {
         const logQuery = `
             INSERT INTO failed_requests 
             (nip, error)
-            VALUES (?, ?)`;
+            VALUES (?, ?)`; // Zapisuje błędy związane z nieudanym pobraniem danych kontaktowych
 
         await connection.promise().execute(logQuery, [company.nip, error.message]);
     }
+}
+
+async function getCompanyContactData(nip) {
+    try {
+        // Wywołaj API GUS, aby pobrać dane firmy na podstawie NIP
+        const contacts = await regonClient.getCompanyData(nip);
+
+        // Jeśli dane kontaktowe są dostępne, zwróć je
+        if (contacts) {
+            return {
+                phone: contacts.phone,
+                email: contacts.email
+            };
+        }
+    } catch (error) {
+        console.error(`Błąd pobierania danych kontaktowych z GUS dla NIP: ${nip}`, error.message);
+        throw error;
+    }
+
+    return null;
 }
 
 function parseAddress(str) {
