@@ -2,7 +2,9 @@ const mysql = require('mysql2');
 const fs = require('fs').promises;
 const path = require('path');
 const readline = require('readline');
-const { getCompanyDetails } = require('./gpt-client');
+const regonClient = require('./regonClient'); // Zakładając, że regonClient jest odpowiedzialny za komunikację z GUS API
+
+
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -57,7 +59,7 @@ async function executeDatabaseImport(folders) {
         host: 'localhost',
         user: 'root',
         password: '',
-        database: 'company_db',
+        database: 'company_db1',
         connectTimeout: 30000
     });
 
@@ -136,33 +138,63 @@ async function insertCompanyData(company, connection) {
 
 async function insertContactData(company, connection) {
     try {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        const contacts = await getCompanyDetails(company.name);
+        // ZAWSZE pobieraj z GUS
+        const contacts = await getCompanyContactData(company.nip);
 
-        if (contacts) {
-            const contactQuery = `
-                INSERT INTO company_contacts 
-                (company_nip, phone, email)
-                VALUES (?, ?, ?)`;
+        // Preferuj dane z GUS, jeśli są, w przeciwnym razie bierz z pliku
+        let phone = contacts && contacts.phone ? contacts.phone : (
+            company.phone || company.telephone || company.telefon || null
+        );
+        let email = contacts && contacts.email ? contacts.email : (
+            company.email || null
+        );
 
-            await connection.promise().execute(contactQuery, [
-                company.nip,
-                contacts.phone || null,
-                contacts.email || null
-            ]);
-            console.log(`Dane kontaktowe zapisane: ${company.name}`);
-        }
+        const contactQuery = `
+            INSERT INTO company_contacts
+            (company_nip, phone, email)
+            VALUES (?, ?, ?)
+        `;
+        await connection.promise().execute(contactQuery, [
+            company.nip,
+            phone,
+            email
+        ]);
+        console.log(`Dane kontaktowe zapisane dla firmy: ${company.name} (telefon: ${phone || "brak"})`);
     } catch (error) {
-        console.error(`Błąd pobierania kontaktów dla ${company.name}:`, error.message);
-
+        const companyName = company && company.name ? company.name : 'nieznana';
+        console.error(`Błąd pobierania kontaktów dla firmy: ${companyName}:`, error.message);
         const logQuery = `
-            INSERT INTO failed_requests 
+            INSERT INTO failed_requests
             (nip, error)
-            VALUES (?, ?)`;
-
-        await connection.promise().execute(logQuery, [company.nip, error.message]);
+            VALUES (?, ?)
+        `;
+        await connection.promise().execute(logQuery, [company ? company.nip : null, error.message]);
     }
 }
+
+
+
+  
+  
+  
+
+  async function getCompanyContactData(nip) {
+    try {
+        const contacts = await regonClient.getCompanyData(nip);
+        if (contacts) {
+            return {
+                phone: contacts.phone,
+                email: contacts.email
+            };
+        }
+    } catch (error) {
+        console.error(`Błąd pobierania danych kontaktowych z GUS dla NIP: ${nip}`, error.message);
+        throw error;
+    }
+    return null;
+}
+
+
 
 function parseAddress(str) {
     if (!str) return {};
@@ -183,7 +215,7 @@ function deleteDatabaseData() {
         host: 'localhost',
         user: 'root',
         password: '',
-        database: 'company_db'
+        database: 'company_db1'
     });
 
     connection.connect((err) => {
