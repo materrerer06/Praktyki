@@ -2,9 +2,7 @@ const mysql = require('mysql2');
 const fs = require('fs').promises;
 const path = require('path');
 const readline = require('readline');
-const regonClient = require('./regonClient'); // Zakładając, że regonClient jest odpowiedzialny za komunikację z GUS API
-
-
+const regonClient = require('./regonClient'); // Komunikacja z GUS API
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -33,6 +31,7 @@ async function runScript1() {
     await executeDatabaseImport(wojFolders);
 }
 
+// Filtruje foldery zaczynające się od "woj"
 async function filterWojFolders(folders) {
     const wojFolders = [];
     for (const folder of folders) {
@@ -76,13 +75,11 @@ async function executeDatabaseImport(folders) {
         try {
             const files = await fs.readdir(jsonDir);
             const jsonFiles = files.filter(file => file.endsWith('.json'));
-
             for (const file of jsonFiles) {
                 const filePath = path.join(jsonDir, file);
                 try {
                     const rawData = await fs.readFile(filePath, 'utf-8');
                     const jsonData = JSON.parse(rawData);
-
                     if (jsonData.items && Array.isArray(jsonData.items)) {
                         for (const company of jsonData.items) {
                             await insertCompanyData(company, connection);
@@ -105,14 +102,13 @@ async function executeDatabaseImport(folders) {
     });
 }
 
+// Wstawia dane firmy do tabeli "companies"
 async function insertCompanyData(company, connection) {
     const address = parseAddress(company.address_html);
-
     const query = `
-        INSERT INTO companies 
+        INSERT INTO companies
         (application_company_id, name, registration_number, nip, nip_eup, kraj, wojewodztwo, powiat, gmina, miejscowosc, ulica, kod_pocztowy, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
-
     const values = [
         company.application_company_id,
         company.name,
@@ -127,7 +123,6 @@ async function insertCompanyData(company, connection) {
         address.ulica || null,
         address.kod_pocztowy || null
     ];
-
     try {
         await connection.promise().execute(query, values);
         console.log(`Dodano firmę: ${company.name}`);
@@ -136,24 +131,24 @@ async function insertCompanyData(company, connection) {
     }
 }
 
+// Wstawia dane kontaktowe do tabeli "company_contacts"
 async function insertContactData(company, connection) {
     try {
-        // ZAWSZE pobieraj z GUS
+        // Najpierw pobierz dane kontaktowe z GUS (zawsze!)
         const contacts = await getCompanyContactData(company.nip);
 
-        // Preferuj dane z GUS, jeśli są, w przeciwnym razie bierz z pliku
-        let phone = contacts && contacts.phone ? contacts.phone : (
+        // Preferuj dane z GUS, potem z pliku
+        let phone = (contacts && contacts.phone) ? contacts.phone : (
             company.phone || company.telephone || company.telefon || null
         );
-        let email = contacts && contacts.email ? contacts.email : (
+        let email = (contacts && contacts.email) ? contacts.email : (
             company.email || null
         );
 
         const contactQuery = `
             INSERT INTO company_contacts
             (company_nip, phone, email)
-            VALUES (?, ?, ?)
-        `;
+            VALUES (?, ?, ?)`;
         await connection.promise().execute(contactQuery, [
             company.nip,
             phone,
@@ -166,19 +161,13 @@ async function insertContactData(company, connection) {
         const logQuery = `
             INSERT INTO failed_requests
             (nip, error)
-            VALUES (?, ?)
-        `;
+            VALUES (?, ?)`;
         await connection.promise().execute(logQuery, [company ? company.nip : null, error.message]);
     }
 }
 
-
-
-  
-  
-  
-
-  async function getCompanyContactData(nip) {
+// Pobiera dane kontaktowe z GUS przez regonClient
+async function getCompanyContactData(nip) {
     try {
         const contacts = await regonClient.getCompanyData(nip);
         if (contacts) {
@@ -194,14 +183,13 @@ async function insertContactData(company, connection) {
     return null;
 }
 
-
-
+// Parsuje adres z HTML do obiektu
 function parseAddress(str) {
     if (!str) return {};
     const parts = str.split(', ');
     const data = {};
     parts.forEach(part => {
-        const match = part.match(/<b>(.+?)<\/b>: (.+)/);
+        const match = part.match(/(.+?)<\/b>: (.+)/);
         if (match) {
             const key = match[1].toLowerCase().replace(/ /g, '_');
             data[key] = match[2];
@@ -210,6 +198,7 @@ function parseAddress(str) {
     return data;
 }
 
+// Usuwa wszystkie dane z bazy
 function deleteDatabaseData() {
     const connection = mysql.createConnection({
         host: 'localhost',
@@ -217,22 +206,18 @@ function deleteDatabaseData() {
         password: '',
         database: 'company_db1'
     });
-
     connection.connect((err) => {
         if (err) {
             console.error('Błąd połączenia z bazą:', err);
             return;
         }
         console.log('Połączono z bazą danych.');
-
         const queries = [
             `DELETE FROM companies;`,
             `DELETE FROM company_contacts;`,
             `DELETE FROM failed_requests;`
         ];
-
         let i = 0;
-
         function runNextQuery() {
             if (i >= queries.length) {
                 connection.end(() => {
@@ -241,7 +226,6 @@ function deleteDatabaseData() {
                 });
                 return;
             }
-
             connection.query(queries[i], (err, result) => {
                 if (err) {
                     console.error(`Błąd przy zapytaniu: ${queries[i]}`, err);
@@ -252,7 +236,6 @@ function deleteDatabaseData() {
                 runNextQuery();
             });
         }
-
         runNextQuery();
     });
 }

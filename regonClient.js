@@ -1,6 +1,6 @@
-var Client = require('./index');
+const Client = require('./index');
 
-var client = Client.createClient({
+const client = Client.createClient({
     key: "abcde12345abcde12345",
     sandbox: true,
     birVersion: '1.1'
@@ -10,13 +10,8 @@ var client = Client.createClient({
 async function getCompanyData(nip) {
     try {
         const gus = await client;
-        console.log("USED API KEY: ", gus.service.key);
-        console.log("Sandbox: ", gus.service.sandbox);
-        console.log("login GUS sessionID: ", gus.getSessionId());
-
         // Najpierw szukamy firmy po NIP
         const findCompanyByNip = await gus.findByNip(nip);
-        console.log("Firma znaleziona przez NIP: ", findCompanyByNip);
 
         // Jeśli nie znaleziono firmy, zwracamy null
         if (!findCompanyByNip || findCompanyByNip.ErrorCode) {
@@ -47,12 +42,10 @@ async function getCompanyData(nip) {
 
         // Pobieramy pełny raport
         const fullReport = await gus.getFullReport(regon, reportType, silosId);
-        console.log("Pełny raport: ", fullReport);
 
         // Wyciągamy numer telefonu i email z odpowiednich pól
         let phone = null;
         let email = null;
-
         if (typ === "F" && fullReport) {
             phone = fullReport.fiz_numerTelefonu || null;
             email = fullReport.fiz_adresEmail || null;
