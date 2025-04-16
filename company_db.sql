@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 04, 2025 at 12:18 PM
+-- Generation Time: Apr 17, 2025 at 12:08 AM
 -- Wersja serwera: 10.4.32-MariaDB
 -- Wersja PHP: 8.2.12
 
@@ -29,7 +29,7 @@ SET time_zone = "+00:00";
 
 CREATE TABLE `companies` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `application_company_id` int(11) NOT NULL,
+  `application_company_id` varchar(100) NOT NULL,
   `name` varchar(255) NOT NULL,
   `registration_number` varchar(50) DEFAULT NULL,
   `nip` varchar(20) DEFAULT NULL,
@@ -40,8 +40,20 @@ CREATE TABLE `companies` (
   `gmina` varchar(100) DEFAULT NULL,
   `miejscowosc` varchar(100) DEFAULT NULL,
   `ulica` varchar(100) DEFAULT NULL,
-  `kod_pocztowy` varchar(20) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `kod_pocztowy` varchar(20) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Struktura tabeli dla tabeli `company_contacts`
+--
+
+CREATE TABLE `company_contacts` (
+  `id` int(11) NOT NULL,
+  `company_nip` varchar(10) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -55,6 +67,12 @@ ALTER TABLE `companies`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indeksy dla tabeli `company_contacts`
+--
+ALTER TABLE `company_contacts`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -62,7 +80,13 @@ ALTER TABLE `companies`
 -- AUTO_INCREMENT for table `companies`
 --
 ALTER TABLE `companies`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=227414;
+
+--
+-- AUTO_INCREMENT for table `company_contacts`
+--
+ALTER TABLE `company_contacts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=387;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -2,7 +2,10 @@ const mysql = require('mysql2');
 const fs = require('fs').promises;
 const path = require('path');
 const readline = require('readline');
-const regonClient = require('./regonClient'); // Zakładając, że regonClient jest odpowiedzialny za komunikację z GUS API
+const regonClient = require('./regonClient');
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -83,9 +86,19 @@ async function executeDatabaseImport(folders) {
 
                     if (jsonData.items && Array.isArray(jsonData.items)) {
                         for (const company of jsonData.items) {
-                            await insertCompanyData(company, connection);
-                            await insertContactData(company, connection);
+                            try {
+                                await insertCompanyData(company, connection);
+                            } catch (err) {
+                                console.error(`Błąd przy dodawaniu firmy: ${company.name}`, err.message);
+                            }
+                        
+                            try {
+                                await insertContactData(company, connection);
+                            } catch (err) {
+                                console.error(`Błąd przy dodawaniu kontaktu dla firmy: ${company.name}`, err.message);
+                            }
                         }
+                        
                     } else {
                         console.log(`Brak tablicy "items" w pliku: ${file}`);
                     }
@@ -108,8 +121,8 @@ async function insertCompanyData(company, connection) {
 
     const query = `
         INSERT INTO companies 
-        (application_company_id, name, registration_number, nip, nip_eup, kraj, wojewodztwo, powiat, gmina, miejscowosc, ulica, kod_pocztowy, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+        (application_company_id, name, registration_number, nip, nip_eup, kraj, wojewodztwo, powiat, gmina, miejscowosc, ulica, kod_pocztowy)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
         company.application_company_id,
@@ -133,43 +146,51 @@ async function insertCompanyData(company, connection) {
         console.error(`Błąd dodawania firmy ${company.name}:`, err.message);
     }
 }
-
+//wrzuca tylko dane z email lub telefon
 async function insertContactData(company, connection) {
-    try {
-        // Uzyskaj dane kontaktowe z GUS na podstawie NIP firmy
         const contacts = await getCompanyContactData(company.nip);
-
-        if (contacts) {
+        if (contacts && (contacts.phone || contacts.email)) {
             const contactQuery = `
                 INSERT INTO company_contacts 
                 (company_nip, phone, email)
-                VALUES (?, ?, ?)`; // Wstawia numer telefonu i email firmy
-
+                VALUES (?, ?, ?)`;
+        
             await connection.promise().execute(contactQuery, [
                 company.nip,
                 contacts.phone || null,
                 contacts.email || null
             ]);
             console.log(`Dane kontaktowe zapisane dla firmy: ${company.name}`);
+        } else {
+            console.log(`Brak danych kontaktowych do zapisania dla firmy: ${company.name}`);
         }
-    } catch (error) {
-        console.error(`Błąd pobierania kontaktów dla ${company.name}:`, error.message);
-
-        const logQuery = `
-            INSERT INTO failed_requests 
-            (nip, error)
-            VALUES (?, ?)`; // Zapisuje błędy związane z nieudanym pobraniem danych kontaktowych
-
-        await connection.promise().execute(logQuery, [company.nip, error.message]);
-    }
+        
 }
+//wrzuca wszystkie
+// async function insertContactData(company, connection) {
+//     // Uzyskaj dane kontaktowe z GUS na podstawie NIP firmy
+//     const contacts = await getCompanyContactData(company.nip);
+
+//     if (contacts) {
+//         const contactQuery = 
+//             INSERT INTO company_contacts 
+//             (company_nip, phone, email)
+//             VALUES (?, ?, ?); // Wstawia numer telefonu i email firmy
+
+//         await connection.promise().execute(contactQuery, [
+//             company.nip,
+//             contacts.phone || null,
+//             contacts.email || null
+//         ]);
+//         console.log(Dane kontaktowe zapisane dla firmy: ${company.name});
+//     }
+// }
 
 async function getCompanyContactData(nip) {
     try {
-        // Wywołaj API GUS, aby pobrać dane firmy na podstawie NIP
+        await delay(500);
         const contacts = await regonClient.getCompanyData(nip);
 
-        // Jeśli dane kontaktowe są dostępne, zwróć je
         if (contacts) {
             return {
                 phone: contacts.phone,
